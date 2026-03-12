@@ -54,6 +54,8 @@ The configuration is derived from three Anthropic engineering articles:
 - [Building a C compiler with a team of parallel Claudes](https://www.anthropic.com/engineering/building-c-compiler)
 - [Demystifying evals for AI agents](https://www.anthropic.com/engineering/demystifying-evals-for-ai-agents)
 
+I would definitely everyone to read these three articles. Believe me, after you read through all these three files, you would have a deeper understand of how Claude Code works and the mechanism about the "automation" happens while using Claude Code.
+
 ## Changelog
 
 ### v2 — Bug Fixes (2026-03-12)
