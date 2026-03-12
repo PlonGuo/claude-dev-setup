@@ -1,71 +1,74 @@
 # claude-dev-setup
 
-A one-time setup instruction for configuring Claude Code with the Ralph loop workflow, based on Anthropic's engineering best practices.
+Configuration files and setup instructions for Claude Code using the **Ralph loop** workflow — an autonomous task execution pattern based on Anthropic engineering best practices.
 
-一次性配置 Claude Code 的 Ralph loop 工作流，基于 Anthropic 工程团队的最佳实践。
+## What's in This Repo
 
----
+| File | Description |
+|------|-------------|
+| `claude-code-setup-instruction-en.md` | English setup instructions (give to Claude Code to auto-configure) |
+| `claude-code-setup-instruction-CN.md` | Chinese setup instructions (中文配置指令) |
 
-## What is this? / 这是什么？
+## How to Use
 
-This repo contains setup instructions that configure Claude Code with:
-- **Ralph loop** workflow for autonomous task execution
-- **Long-running agent** best practices (progress tracking, fresh context windows)
-- **Eval strategy** (phased approach from unit tests to RAGAs)
+Clone this repo, then paste the content of either instruction file into a new Claude Code session. Claude will configure your global `~/.claude/` environment automatically.
 
-本 repo 包含配置指令，帮你一键设置：
-- **Ralph loop** 自动化任务执行工作流
-- **Long-running agent** 最佳实践（进度追踪、fresh context window）
-- **分阶段 Eval 策略**（从单元测试到 RAGAs）
+## The Ralph Loop Workflow
 
----
+```
+Plan Mode (chat) → /start-ralph → bash ~/.claude/scripts/ralph.sh → Review commits
+```
 
-## Based on / 基于
+1. **Plan Mode**: Discuss requirements with Claude, design architecture, define tasks
+2. **`/start-ralph`**: Generates `feature-requirements.md` + `progress.txt`, executes first task
+3. **`ralph.sh`**: Fully automated loop — fresh context window per iteration, runs until all tasks complete
+4. **Review**: Check git commit history; exit loop for manual adjustments if needed
+
+## What Gets Configured
+
+```
+~/.claude/
+├── CLAUDE.md                        # Global rules (Ralph loop + @-include references)
+├── docs/
+│   ├── effective-harnesses.md       # Harness design best practices
+│   ├── building-c-compiler.md       # Parallel agent coordination patterns
+│   └── demystifying-evals.md        # Phased eval strategy
+├── commands/
+│   └── start-ralph.md               # /start-ralph slash command
+└── scripts/
+    └── ralph.sh                     # Automation loop script
+```
+
+## Core Principles
+
+- **Fresh context per iteration** — no context accumulation, consistent performance across 50+ iterations
+- **Git as memory** — `progress.txt` + `feature-requirements.md` committed after every change
+- **Tests as completion gate** — tasks only marked `[x]` when unit tests pass
+- **Auto git-root navigation** — `ralph.sh` works from any subdirectory in your project
+
+## Source Articles
+
+The configuration is derived from three Anthropic engineering articles:
 
 - [Effective harnesses for long-running agents](https://www.anthropic.com/engineering/effective-harnesses-for-long-running-agents)
 - [Building a C compiler with a team of parallel Claudes](https://www.anthropic.com/engineering/building-c-compiler)
 - [Demystifying evals for AI agents](https://www.anthropic.com/engineering/demystifying-evals-for-ai-agents)
 
----
+## Changelog
 
-## Usage / 使用方法
+### v2 — Bug Fixes (2026-03-12)
 
-**First time or new machine / 首次使用或新机器：**
+Reviewed against Anthropic engineering standards. Fixed 7 issues in the original design:
 
-```bash
-git clone https://github.com/your-username/claude-dev-setup
-```
-
-Then open Claude Code, upload the instruction file, and let it run.
-
-打开 Claude Code，上传 instruction 文件，让它自动执行配置。
-
-- English: `claude-code-setup-instruction-en.md`
-- 中文: `claude-code-setup-instruction.md`
-
-**After setup / 配置完成后，每个新项目：**
-
-```
-1. Plan Mode  →  discuss requirements with Claude Code
-2. /start-ralph  →  auto-generate task files + execute first task
-3. bash ralph.sh  →  fully automated loop until all tasks complete
-4. Review commit history
-```
-
----
-
-## What gets configured / 配置内容
-
-| File | Location | Purpose |
-|------|----------|---------|
-| `CLAUDE.md` | `~/.claude/` | Global rules for all projects |
-| `effective-harnesses.md` | `~/.claude/docs/` | Harness best practices summary |
-| `building-c-compiler.md` | `~/.claude/docs/` | Parallel agent best practices summary |
-| `demystifying-evals.md` | `~/.claude/docs/` | Eval best practices summary |
-| `start-ralph.md` | `.claude/commands/` | Project-level slash command template |
-| `ralph.sh` | project root | Bash loop script template |
-
----
+| Issue | Fix |
+|-------|-----|
+| `$?` overwritten before failure check | Capture `CLAUDE_EXIT=$?` immediately after `claude` command |
+| `grep "COMPLETE"` matched "INCOMPLETE" etc. | Use `grep -qF "<promise>COMPLETE</promise>"` for exact match |
+| Missing `progress.txt` silently exits as "all done" | Added guard: explicit error + `exit 1` |
+| Max-iter warning fired on clean COMPLETE exit | Added `LOOP_COMPLETE` flag |
+| Script required running from project root | Auto `cd` via `git rev-parse --show-toplevel` |
+| `/start-ralph` undefined behavior without plan context | Added fallback: ask user for requirements |
+| `/start-ralph` emitted COMPLETE signal (wrong semantics) | Removed: COMPLETE is loop-termination only |
 
 ## License
 
