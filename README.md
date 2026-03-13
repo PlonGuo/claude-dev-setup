@@ -50,17 +50,38 @@ Two on-demand slash commands for enforcing engineering quality standards across 
 | Command | What it does |
 |---------|-------------|
 | `/quality-gate` | Detects stack, audits test coverage / linting / type checking / security / CI gaps, writes a report to `.claude/quality-gate.md`. **Read-only.** |
-| `/quality-fix` | Reads the gap report and implements approved fixes — config files, deps (with permission), CI pipeline (separate confirmation). |
+| `/quality-fix` | Reads the existing gap report and implements approved fixes — config files, deps (with permission), CI pipeline (separate confirmation). |
 
 **To install:** paste the contents of `global-quality-commands-setup.md` into a Claude Code session. Claude will create both skill files under `~/.claude/skills/` automatically.
 
+### Typical workflow
+
+**First time setup** — run both commands:
+
 ```
-# Step 1: Audit your project
+# Step 1: Audit your project (detects stack, checks tests/lint/security/CI, writes report)
 /quality-gate
 
 # Step 2: Review .claude/quality-gate.md, then implement fixes
 /quality-fix
 ```
+
+`/quality-gate` handles the full discovery phase on first run — it detects your stack, audits all quality dimensions including test infrastructure, and writes the gap report. **You only need to run it once per project.**
+
+**Ongoing use** — just run `/quality-fix` directly:
+
+```
+# The gap report persists between sessions — no need to re-audit
+/quality-fix
+```
+
+`/quality-fix` reads the existing `.claude/quality-gate.md` report and picks up where you left off. Re-run `/quality-gate` only if the project has changed significantly (it will warn you if the report is older than 7 days).
+
+### Key safety features of `/quality-fix`
+
+- **Three gated steps** — config files first, then deps (requires confirmation), then CI changes (separate confirmation)
+- **Verification after each fix** — runs the tool immediately; stops on failure rather than silently continuing
+- **Stale report warning** — alerts if the report is older than 7 days and suggests re-auditing
 
 Works across all languages: Python, Node/TS, Go, Rust, Java, Ruby, PHP, and more.
 
