@@ -8,6 +8,7 @@ Configuration files and setup instructions for Claude Code using the **Ralph loo
 |------|-------------|
 | `claude-code-setup-instruction-en.md` | English setup instructions (give to Claude Code to auto-configure) |
 | `claude-code-setup-instruction-CN.md` | Chinese setup instructions (中文配置指令) |
+| `global-quality-commands-setup.md` | Global `/quality-gate` + `/quality-fix` commands (paste to Claude Code to install) |
 
 ## How to Use
 
@@ -35,9 +36,33 @@ Plan Mode (chat) → /start-ralph → bash ~/.claude/scripts/ralph.sh → Review
 │   └── demystifying-evals.md        # Phased eval strategy
 ├── commands/
 │   └── start-ralph.md               # /start-ralph slash command
+├── skills/
+│   ├── quality-gate/SKILL.md        # /quality-gate — read-only audit command
+│   └── quality-fix/SKILL.md         # /quality-fix — implements approved gaps
 └── scripts/
     └── ralph.sh                     # Automation loop script
 ```
+
+## Global Quality Commands
+
+Two on-demand slash commands for enforcing engineering quality standards across any project:
+
+| Command | What it does |
+|---------|-------------|
+| `/quality-gate` | Detects stack, audits test coverage / linting / type checking / security / CI gaps, writes a report to `.claude/quality-gate.md`. **Read-only.** |
+| `/quality-fix` | Reads the gap report and implements approved fixes — config files, deps (with permission), CI pipeline (separate confirmation). |
+
+**To install:** paste the contents of `global-quality-commands-setup.md` into a Claude Code session. Claude will create both skill files under `~/.claude/skills/` automatically.
+
+```
+# Step 1: Audit your project
+/quality-gate
+
+# Step 2: Review .claude/quality-gate.md, then implement fixes
+/quality-fix
+```
+
+Works across all languages: Python, Node/TS, Go, Rust, Java, Ruby, PHP, and more.
 
 ## Core Principles
 
