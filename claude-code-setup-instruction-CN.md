@@ -34,7 +34,7 @@
 - **每个任务 = 一个可独立测试的功能单元**
 - **任务粒度**：不能太大（一个 context 内无法完成），也不能太小（过于碎片化）
 - **单元测试是唯一的完成标准** — 任务的测试通过后才能标记为 `[x]`；否则继续重试，直到通过或达到最大迭代次数
-- **每次迭代必须先读取 git log + progress.txt** 以重建上下文，再执行下一个任务
+- **每次迭代必须先读取 `git log --oneline -50` + progress.txt** 以重建上下文，再执行下一个任务
 - **progress.txt 和 feature-requirements.md 必须提交到 git** — 它们是跨 context 持久化的核心记忆
 
 ---
@@ -51,7 +51,7 @@
 ## Ralph Loop Workflow
 - All projects use the Ralph loop pattern by default
 - Each loop iteration uses a fresh context window (do NOT use the official Ralph plugin)
-- Each iteration must start by reading `git log --oneline -20` and `progress.txt` to rebuild context
+- Each iteration must start by reading `git log --oneline -50` and `progress.txt` to rebuild context
 - Task completion criteria: all corresponding unit tests must pass before marking `[x]`
 - `progress.txt` and `feature-requirements.md` must be committed to git after every change
 
@@ -188,37 +188,52 @@ Source: https://www.anthropic.com/engineering/demystifying-evals-for-ai-agents
 放置在**全局** `~/.claude/commands/` 目录下，使其在所有项目中都可用。
 
 ```markdown
-Read the current git log and existing progress.txt (if any) to understand the project state.
+Read `git log --oneline -50` and `progress.txt` (if it exists) to understand the project state.
 
-Based on our Plan Mode conversation and any existing context. **If no prior plan discussion is available in this session**, ask the user: "What feature or set of tasks should I generate requirements for?" before proceeding.
+## Mode Detection (check this first)
 
-1. **Generate `feature-requirements.md`** with:
-   - A numbered task list derived from our plan discussion
-   - Each task has explicit completion criteria
-   - Each task specifies its verification method (unit tests / lint / type checks / e2e)
-   - Format: `- [ ] Task N: [description] — verified by: [test command]`
+**Resume mode** — if `progress.txt` already exists AND contains at least one `[x]` task:
+- Do NOT regenerate `feature-requirements.md` or reset `progress.txt`
+- Skip directly to Step 4: find the next `[ ]` task and execute it
 
-2. **Initialize or update `progress.txt`** with:
-   - Project name
-   - Start timestamp
-   - Tech stack summary
-   - All tasks from feature-requirements.md marked `[ ]`
-   - Any already-completed tasks from git history marked `[x]`
+**Fresh init mode** — if `progress.txt` does not exist or has no `[x]` tasks: proceed with Steps 1–4.
 
-3. **Commit both files to git:**
+---
+
+## Fresh Init
+
+**Step 1 — Generate `feature-requirements.md`**
+
+Source requirements from (in priority order):
+1. Current session's Plan Mode discussion
+2. README, existing docs, `.claude/` files
+3. Git log and existing source structure
+
+- If running **non-interactively** (called via `ralph` script with no plan discussion in session): infer requirements from project files — do NOT ask questions, make your best inference and proceed.
+- If running **interactively** and you cannot infer enough: ask the user _"What feature or set of tasks should I generate requirements for?"_
+
+Format: `- [ ] Task N: [description] — verified by: [test command]`
+
+**Step 2 — Initialize `progress.txt`** with project name, start timestamp, tech stack summary, all tasks marked `[ ]`, and any already-completed tasks from git history marked `[x]`.
+
+**Step 3 — Commit both files:**
+```bash
+git add feature-requirements.md progress.txt
+git commit -m "chore: initialize Ralph loop task list"
+```
+
+**Step 4 — Execute the next `[ ]` task:**
+1. Write unit tests first (TDD)
+2. Implement until tests pass
+3. Mark the task `[x]` in `progress.txt`
+4. Commit code AND `progress.txt` together in one atomic commit — prevents state drift if the loop is interrupted:
    ```bash
-   git add feature-requirements.md progress.txt
-   git commit -m "chore: initialize Ralph loop task list"
+   git add <changed source files> progress.txt
+   git commit -m "feat: <task description>"
    ```
+   **Important:** Do NOT use `git add -A` — explicitly add only the files you changed to avoid committing secrets or build artifacts. Ensure `.gitignore` is adequate before committing.
 
-4. **Execute the first `[ ]` task:**
-   - Write unit tests for the task first (TDD)
-   - Implement the feature until tests pass
-   - Commit the code with a meaningful message
-   - Update `progress.txt` to mark the task `[x]`
-   - Commit the updated progress.txt
-
-5. **Do NOT output `<promise>COMPLETE</promise>`** — that signal means "all tasks done" and belongs to the loop iterations, not the initializer. Simply finish after committing task 1.
+**Do NOT output `<promise>COMPLETE</promise>`** unless you are running inside the Ralph loop (the loop will tell you if you are). In interactive mode, simply finish after committing the task.
 ```
 
 ---
@@ -244,11 +259,50 @@ if [ -z "$GIT_ROOT" ]; then
 fi
 cd "$GIT_ROOT"
 
+# 配置
 MAX_ITERATIONS=50
+CALL_TIMEOUT=${CALL_TIMEOUT:-600}  # 每次调用超时（秒），默认 10 分钟
+
+# macOS 兼容：默认无 timeout 命令（需 `brew install coreutils`）
+if ! command -v timeout &>/dev/null; then
+  echo "⚠️  'timeout' command not found. Running without per-call timeout protection."
+  echo "    Install with: brew install coreutils"
+  timeout() { shift; "$@"; }  # 无操作：跳过超时参数，直接运行命令
+fi
+
+MAX_FAILURES=3
 ITERATION=0
 CONSECUTIVE_FAILURES=0
-MAX_FAILURES=3
-LOOP_COMPLETE=false  # 跟踪正常完成状态，防止误触发 max-iter 警告
+LOOP_COMPLETE=false
+
+# --dangerously-skip-permissions 安全提示
+if [ "${RALPH_SAFE}" != "1" ]; then
+  echo "⚠️  Running with --dangerously-skip-permissions (full auto mode)"
+  echo "    Set RALPH_SAFE=1 to skip this warning."
+  echo "    Press Ctrl+C within 5s to abort..."
+  sleep 5
+fi
+
+# 加载 start-ralph skill 作为 prompt 的唯一真实来源
+SKILL_PATH="$HOME/.claude/commands/start-ralph.md"
+if [ ! -f "$SKILL_PATH" ]; then
+  echo "❌ start-ralph skill not found at $SKILL_PATH"
+  exit 1
+fi
+SKILL_PROMPT=$(cat "$SKILL_PATH")
+
+# 循环特定指令，追加到 skill prompt 之后
+LOOP_SUFFIX="
+
+---
+## Loop Context (appended by ralph.sh)
+
+You are running inside the Ralph loop (non-interactive, fresh context each iteration).
+Override the earlier instruction about COMPLETE — in this context:
+- After completing a task, check progress.txt for remaining [ ] tasks.
+- If ALL tasks are now [x], output <promise>COMPLETE</promise> to signal the loop is finished.
+- If there are remaining [ ] tasks, do NOT output COMPLETE. Simply finish after committing.
+"
 
 while [ $ITERATION -lt $MAX_ITERATIONS ]; do
   ITERATION=$((ITERATION + 1))
@@ -268,39 +322,43 @@ while [ $ITERATION -lt $MAX_ITERATIONS ]; do
   fi
 
   # 运行一次 Claude Code 迭代（全新 context）
-  OUTPUT=$(claude -p "
-    First, read git log --oneline -20 to understand recent progress.
-    Then read feature-requirements.md and progress.txt.
-    Find the next incomplete [ ] task and execute it.
-    Write corresponding unit tests and ensure they pass.
-    Commit the code and update progress.txt to mark the task [x].
-    Output <promise>COMPLETE</promise> when all tasks are done.
-  " --dangerously-skip-permissions 2>&1)
+  # 使用 start-ralph.md 作为 prompt — skill 的任何修改自动同步到此
+  OUTPUT=$(timeout "$CALL_TIMEOUT" claude -p "${SKILL_PROMPT}${LOOP_SUFFIX}" --dangerously-skip-permissions 2>&1)
   CLAUDE_EXIT=$?  # 立即捕获 — $? 会被后续任何命令覆盖
 
   echo "$OUTPUT"
 
   # 检测完成信号 — 精确匹配完整 tag，避免误匹配
-  # （如 "INCOMPLETE"、"not COMPLETE" 等会触发宽泛 grep）
   if echo "$OUTPUT" | grep -qF "<promise>COMPLETE</promise>"; then
     echo "✅ Ralph loop complete!"
     LOOP_COMPLETE=true
     break
   fi
 
-  # 通过 claude 退出码检测连续失败
-  if [ $CLAUDE_EXIT -ne 0 ]; then
+  # 处理超时（退出码 124）
+  if [ $CLAUDE_EXIT -eq 124 ]; then
+    echo "⚠️ Iteration timed out after ${CALL_TIMEOUT}s"
+    CONSECUTIVE_FAILURES=$((CONSECUTIVE_FAILURES + 1))
+  elif [ $CLAUDE_EXIT -ne 0 ]; then
     CONSECUTIVE_FAILURES=$((CONSECUTIVE_FAILURES + 1))
     echo "⚠️ Non-zero exit ($CONSECUTIVE_FAILURES/$MAX_FAILURES)"
-    if [ $CONSECUTIVE_FAILURES -ge $MAX_FAILURES ]; then
-      echo "❌ Too many consecutive failures. Review progress.txt and fix manually."
-      break
-    fi
   else
     CONSECUTIVE_FAILURES=0
   fi
 
-  sleep 2
+  # 失败时指数退避，成功时固定延迟
+  if [ $CONSECUTIVE_FAILURES -gt 0 ]; then
+    if [ $CONSECUTIVE_FAILURES -ge $MAX_FAILURES ]; then
+      echo "❌ Too many consecutive failures. Review progress.txt and fix manually."
+      break
+    fi
+    BACKOFF=$((2 ** CONSECUTIVE_FAILURES))
+    [ $BACKOFF -gt 60 ] && BACKOFF=60
+    echo "⏳ Backing off ${BACKOFF}s before retry..."
+    sleep $BACKOFF
+  else
+    sleep 2
+  fi
 done
 
 if [ "$LOOP_COMPLETE" = false ] && [ $ITERATION -ge $MAX_ITERATIONS ]; then
@@ -353,5 +411,13 @@ chmod +x ~/.claude/scripts/ralph.sh
 | `progress.txt` 不存在时，脚本静默退出并误报"全部完成" | 添加防护：文件不存在时输出明确错误信息 + `exit 1` |
 | 正常 COMPLETE 退出时仍会触发 max-iter 警告 | 添加 `LOOP_COMPLETE` 标志；只在真正超时时才显示警告 |
 | 脚本要求必须在项目根目录运行 | 通过 `git rev-parse --show-toplevel` 自动跳转到 git 根目录 |
-| `/start-ralph` 在没有 plan 对话上下文时行为未定义 | 添加 fallback：若无上下文则先询问用户需求 |
-| `/start-ralph` 错误地输出 `COMPLETE` 信号（语义错误） | 移除：`COMPLETE` 是循环终止信号，不是每次任务完成的信号 |
+| `/start-ralph` 在没有 plan 对话上下文时行为未定义 | 非交互模式从项目文件推断；交互模式询问用户 |
+| `/start-ralph` 错误地输出 `COMPLETE` 信号（语义错误） | 上下文感知：只在 ralph 循环告知时才输出 |
+| ralph.sh 的 inline prompt 与 start-ralph skill 脱节 | ralph.sh 现在读取 `start-ralph.md` 作为 prompt — 单一事实来源 |
+| 无每次调用超时 — `claude` 挂死会无限阻塞循环 | `timeout $CALL_TIMEOUT claude ...`（默认 600s） |
+| `sleep 2` 在 rate-limit 失败时导致快速重试 | 失败时指数退避（`2^n` 秒，上限 60s） |
+| `--dangerously-skip-permissions` 无任何警告 | 5s 倒计时 + `Ctrl+C` 退出；`RALPH_SAFE=1` 跳过 |
+| start-ralph 中 `git add -A` 可能提交密钥/构建产物 | 改为显式添加文件；警告确保 `.gitignore` 充分 |
+| `git log --oneline -20` 在大项目中遗漏早期任务 | 全部文件统一改为 `-50` |
+| 重新运行 start-ralph 会重置 `progress.txt`，丢失已完成任务 | Resume 模式：检测已有 `[x]` 任务时跳过重新初始化 |
+| 代码和 `progress.txt` 分开提交 — 中断时状态不一致 | 原子提交：代码 + `progress.txt` 在一次 `git commit` 中 |

@@ -17,13 +17,25 @@ Clone this repo, then paste the content of either instruction file into a new Cl
 ## The Ralph Loop Workflow
 
 ```
-Plan Mode (chat) → /start-ralph → bash ~/.claude/scripts/ralph.sh → Review commits
+Plan Mode (chat) → ralph → Review commits
 ```
 
 1. **Plan Mode**: Discuss requirements with Claude, design architecture, define tasks
-2. **`/start-ralph`**: Generates `feature-requirements.md` + `progress.txt`, executes first task
-3. **`ralph.sh`**: Fully automated loop — fresh context window per iteration, runs until all tasks complete
-4. **Review**: Check git commit history; exit loop for manual adjustments if needed
+2. **`ralph`**: Single command — initializes `feature-requirements.md` + `progress.txt` via `/start-ralph`, then loops autonomously until all tasks are complete (fresh context window per iteration)
+3. **Review**: Check git commit history; re-run `ralph` to resume after manual adjustments
+
+**New project:**
+```bash
+# After a Plan Mode session:
+cd /your/project
+ralph
+```
+
+**Resume after interruption:**
+```bash
+cd /your/project
+ralph   # detects existing progress.txt, resumes from next [ ] task
+```
 
 ## What Gets Configured
 
@@ -35,12 +47,12 @@ Plan Mode (chat) → /start-ralph → bash ~/.claude/scripts/ralph.sh → Review
 │   ├── building-c-compiler.md       # Parallel agent coordination patterns
 │   └── demystifying-evals.md        # Phased eval strategy
 ├── commands/
-│   └── start-ralph.md               # /start-ralph slash command
+│   └── start-ralph.md               # /start-ralph slash command (init + resume)
 ├── skills/
 │   ├── quality-gate/SKILL.md        # /quality-gate — read-only audit command
 │   └── quality-fix/SKILL.md         # /quality-fix — implements approved gaps
 └── scripts/
-    └── ralph.sh                     # Automation loop script
+    └── ralph.sh                     # Ralph loop runner (reads start-ralph.md as prompt)
 ```
 
 ## Global Quality Commands
@@ -88,9 +100,11 @@ Works across all languages: Python, Node/TS, Go, Rust, Java, Ruby, PHP, and more
 ## Core Principles
 
 - **Fresh context per iteration** — no context accumulation, consistent performance across 50+ iterations
-- **Git as memory** — `progress.txt` + `feature-requirements.md` committed after every change
+- **Git as memory** — `progress.txt` + `feature-requirements.md` committed after every change; atomic commits prevent state drift on interruption
 - **Tests as completion gate** — tasks only marked `[x]` when unit tests pass
-- **Auto git-root navigation** — `ralph.sh` works from any subdirectory in your project
+- **Auto git-root navigation** — `ralph` works from any subdirectory in your project
+- **Idempotent init** — re-running `ralph` on a project with existing progress resumes from the next `[ ]` task, never resets completed work
+- **Failure-safe loop** — per-call timeout (10 min), exponential backoff on errors, hard stop after 3 consecutive failures
 
 ## Source Articles
 
@@ -100,23 +114,26 @@ The configuration is derived from three Anthropic engineering articles:
 - [Building a C compiler with a team of parallel Claudes](https://www.anthropic.com/engineering/building-c-compiler)
 - [Demystifying evals for AI agents](https://www.anthropic.com/engineering/demystifying-evals-for-ai-agents)
 
-I would definitely everyone to read these three articles. Believe me, after you read through all these three files, you would have a deeper understand of how Claude Code works and the mechanism about the "automation" happens while using Claude Code.
+I would definitely recommend everyone to read these three articles. Believe me, after you read through all three, you will have a deeper understanding of how Claude Code works and the mechanism behind the "automation" that happens while using Claude Code.
 
 ## Changelog
 
-### v2 — Bug Fixes (2026-03-12)
+### v3 — Sync & Safety Overhaul (2026-03-12)
 
-Reviewed against Anthropic engineering standards. Fixed 7 issues in the original design:
+Core change: `ralph.sh` now reads `start-ralph.md` as its prompt source — single source of truth, no more drift between skill and script.
 
-| Issue | Fix |
-|-------|-----|
-| `$?` overwritten before failure check | Capture `CLAUDE_EXIT=$?` immediately after `claude` command |
-| `grep "COMPLETE"` matched "INCOMPLETE" etc. | Use `grep -qF "<promise>COMPLETE</promise>"` for exact match |
-| Missing `progress.txt` silently exits as "all done" | Added guard: explicit error + `exit 1` |
-| Max-iter warning fired on clean COMPLETE exit | Added `LOOP_COMPLETE` flag |
-| Script required running from project root | Auto `cd` via `git rev-parse --show-toplevel` |
-| `/start-ralph` undefined behavior without plan context | Added fallback: ask user for requirements |
-| `/start-ralph` emitted COMPLETE signal (wrong semantics) | Removed: COMPLETE is loop-termination only |
+| Issue | Severity | Fix |
+|-------|----------|-----|
+| ralph.sh inline prompt diverged from start-ralph skill | Critical | ralph.sh reads `~/.claude/commands/start-ralph.md` directly; loop-specific instructions appended as suffix |
+| Re-running `start-ralph` reset `progress.txt`, erasing completed tasks | Critical | Resume mode: detects existing `[x]` tasks → skip re-init |
+| No per-call timeout — hung `claude` blocked loop indefinitely | Major | `timeout $CALL_TIMEOUT claude ...` (default 600s) |
+| Non-interactive mode: `start-ralph` asked questions nobody could answer | Major | Infer from README/git/source files; only ask if interactive |
+| `--dangerously-skip-permissions` applied with no warning | Major | 5s countdown with `Ctrl+C` escape hatch; `RALPH_SAFE=1` opt-out |
+| `sleep 2` caused rapid retries on rate-limit failures | Minor | Exponential backoff (`2^n` seconds, capped at 60s) on failures |
+| Code committed separately from `progress.txt` — state drift on crash | Minor | Atomic commit: code + `progress.txt` in one `git commit` |
+| `git add -A` could commit secrets or build artifacts | Minor | Changed to explicit file adds; warns about `.gitignore` |
+| `git log --oneline -20` missed early tasks on large projects | Minor | Increased to `-50` across all files |
+| `start-ralph` COMPLETE signal semantics were wrong | Minor | Context-aware: only emit COMPLETE when ralph loop appends override |
 
 ## License
 
