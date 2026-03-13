@@ -9,10 +9,45 @@ Configuration files and setup instructions for Claude Code using the **Ralph loo
 | `claude-code-setup-instruction-en.md` | English setup instructions (give to Claude Code to auto-configure) |
 | `claude-code-setup-instruction-CN.md` | Chinese setup instructions (中文配置指令) |
 | `global-quality-commands-setup.md` | Global `/quality-gate` + `/quality-fix` commands (paste to Claude Code to install) |
+| `scripts/ralph.sh` | Ralph loop runner script (autonomous task execution) |
 
 ## How to Use
 
 Clone this repo, then paste the content of either instruction file into a new Claude Code session. Claude will configure your global `~/.claude/` environment automatically.
+
+## Ralph Setup
+
+### Prerequisites
+
+- [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code) installed and authenticated
+- A Claude Pro or Max subscription (required for `claude -p` headless mode)
+
+### Installation
+
+1. **Copy the script and skill files** using the setup instructions (`claude-code-setup-instruction-en.md` or CN), or manually:
+
+```bash
+# Copy the ralph script
+mkdir -p ~/.claude/scripts
+cp scripts/ralph.sh ~/.claude/scripts/ralph.sh
+```
+
+2. **Add a shell alias** to your `~/.zshrc` (or `~/.bashrc`):
+
+```bash
+echo "alias ralph='bash ~/.claude/scripts/ralph.sh'" >> ~/.zshrc
+source ~/.zshrc
+```
+
+3. **(Optional) Install `timeout` for per-call timeout protection:**
+
+```bash
+brew install coreutils
+```
+
+### Important: Run `ralph` from a standalone terminal
+
+`ralph` uses `claude -p` (headless mode) which conflicts with the VSCode integrated terminal when the Claude Code extension is active. **Always run `ralph` from a standalone terminal** (Terminal.app, iTerm2, Warp, etc.) — not from the VSCode integrated terminal.
 
 ## The Ralph Loop Workflow
 
@@ -37,6 +72,23 @@ cd /your/project
 ralph   # detects existing progress.txt, resumes from next [ ] task
 ```
 
+### Configuration
+
+| Environment Variable | Default | Description |
+|---------------------|---------|-------------|
+| `RALPH_TIMEOUT` | `600` | Per-call timeout in seconds (requires `coreutils`) |
+| `RALPH_MAX` | `50` | Maximum loop iterations |
+| `RALPH_LOG` | `.ralph.log` | Log file path (in project root) |
+| `RALPH_SAFE` | unset | Set to `1` to suppress the 5s safety countdown |
+
+### Viewing real-time logs
+
+Ralph streams output to both the terminal and a log file. To watch logs from another terminal:
+
+```bash
+tail -f /path/to/your/project/.ralph.log
+```
+
 ## What Gets Configured
 
 ```
@@ -52,7 +104,7 @@ ralph   # detects existing progress.txt, resumes from next [ ] task
 │   ├── quality-gate/SKILL.md        # /quality-gate — read-only audit command
 │   └── quality-fix/SKILL.md         # /quality-fix — implements approved gaps
 └── scripts/
-    └── ralph.sh                     # Ralph loop runner (reads start-ralph.md as prompt)
+    └── ralph.sh                     # Ralph loop runner (reads start-ralph.md as prompt; run from standalone terminal only)
 ```
 
 ## Global Quality Commands
