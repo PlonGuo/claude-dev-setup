@@ -22,8 +22,8 @@ After reading, configure my development environment according to the requirement
 I use the **Ralph loop** development pattern:
 
 1. **Plan Mode** (conversation with you): Discuss requirements, design architecture, define tasks
-2. **`/start-ralph`** (slash command): Auto-generate required files and execute the first task
-3. **`bash ~/.claude/scripts/ralph.sh`**: Fully automated loop through remaining tasks until all complete
+2. **`/start-ralph`** (slash command): Auto-generate required files, commit, then **stop** — does NOT auto-execute tasks unless I explicitly say to start
+3. **`bash ~/.claude/scripts/ralph.sh`**: Fully automated loop through tasks until all complete
 4. **Review**: I check the commit history, exit the loop for manual adjustments if needed
 
 ---
@@ -194,9 +194,10 @@ Read `git log --oneline -50` and `progress.txt` (if it exists) to understand the
 
 **Resume mode** — if `progress.txt` already exists AND contains at least one `[x]` task:
 - Do NOT regenerate `feature-requirements.md` or reset `progress.txt`
-- Skip directly to Step 4: find the next `[ ]` task and execute it
+- If there are pending `[ ]` tasks in `progress.txt` that match the current plan, report the next task and **STOP**. Do NOT execute it unless the user explicitly says to start.
+- If `progress.txt` is missing tasks from the current plan (in `.claude/plans/`), update `progress.txt` and `feature-requirements.md` to include them, commit, then **STOP** and report what was added.
 
-**Fresh init mode** — if `progress.txt` does not exist or has no `[x]` tasks: proceed with Steps 1–4.
+**Fresh init mode** — if `progress.txt` does not exist or has no `[x]` tasks: proceed with Steps 1–3, commit, then **STOP**. Do NOT execute Step 4 unless the user explicitly asks.
 
 ---
 
@@ -222,7 +223,7 @@ git add feature-requirements.md progress.txt
 git commit -m "chore: initialize Ralph loop task list"
 ```
 
-**Step 4 — Execute the next `[ ]` task:**
+**Step 4 — Execute the next `[ ]` task** (ONLY when user explicitly asks, or when called by the external Ralph loop script):
 1. Write unit tests first (TDD)
 2. Implement until tests pass
 3. Mark the task `[x]` in `progress.txt`

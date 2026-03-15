@@ -56,8 +56,9 @@ Plan Mode (chat) → ralph → Review commits
 ```
 
 1. **Plan Mode**: Discuss requirements with Claude, design architecture, define tasks
-2. **`ralph`**: Single command — initializes `feature-requirements.md` + `progress.txt` via `/start-ralph`, then loops autonomously until all tasks are complete (fresh context window per iteration)
-3. **Review**: Check git commit history; re-run `ralph` to resume after manual adjustments
+2. **`/start-ralph`**: Initializes `feature-requirements.md` + `progress.txt`, commits, then **stops** — does NOT auto-execute tasks unless you explicitly say to start
+3. **`ralph`**: Fully automated loop through tasks until all complete (fresh context window per iteration)
+4. **Review**: Check git commit history; re-run `ralph` to resume after manual adjustments
 
 **New project:**
 ```bash

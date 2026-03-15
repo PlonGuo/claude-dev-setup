@@ -22,8 +22,8 @@
 我使用 **Ralph 循环** 开发模式：
 
 1. **Plan Mode**（与你对话）：讨论需求、设计架构、定义任务
-2. **`/start-ralph`**（slash 命令）：自动生成所需文件并执行第一个任务
-3. **`bash ~/.claude/scripts/ralph.sh`**：全自动循环执行剩余任务直到全部完成
+2. **`/start-ralph`**（slash 命令）：自动生成所需文件并提交，然后**停止** — 不会自动执行任务，除非你明确要求开始
+3. **`bash ~/.claude/scripts/ralph.sh`**：全自动循环执行任务直到全部完成
 4. **Review**：我检查 commit 历史，如需手动调整则退出循环
 
 ---
@@ -194,9 +194,10 @@ Read `git log --oneline -50` and `progress.txt` (if it exists) to understand the
 
 **Resume mode** — if `progress.txt` already exists AND contains at least one `[x]` task:
 - Do NOT regenerate `feature-requirements.md` or reset `progress.txt`
-- Skip directly to Step 4: find the next `[ ]` task and execute it
+- If there are pending `[ ]` tasks in `progress.txt` that match the current plan, report the next task and **STOP**. Do NOT execute it unless the user explicitly says to start.
+- If `progress.txt` is missing tasks from the current plan (in `.claude/plans/`), update `progress.txt` and `feature-requirements.md` to include them, commit, then **STOP** and report what was added.
 
-**Fresh init mode** — if `progress.txt` does not exist or has no `[x]` tasks: proceed with Steps 1–4.
+**Fresh init mode** — if `progress.txt` does not exist or has no `[x]` tasks: proceed with Steps 1–3, commit, then **STOP**. Do NOT execute Step 4 unless the user explicitly asks.
 
 ---
 
@@ -222,7 +223,7 @@ git add feature-requirements.md progress.txt
 git commit -m "chore: initialize Ralph loop task list"
 ```
 
-**Step 4 — Execute the next `[ ]` task:**
+**Step 4 — Execute the next `[ ]` task** (ONLY when user explicitly asks, or when called by the external Ralph loop script):
 1. Write unit tests first (TDD)
 2. Implement until tests pass
 3. Mark the task `[x]` in `progress.txt`
